@@ -1,0 +1,9 @@
+[package]
+name = "decentralized_real_estate"
+version = "0.0.1"
+
+[dependencies]
+Sui = { git = "https://github.com/MystenLabs/sui.git", subdir = "crates/sui-framework/packages/sui-framework", rev = "framework/testnet" }
+
+[addresses]
+decentralized_real_estate = "0x0"
