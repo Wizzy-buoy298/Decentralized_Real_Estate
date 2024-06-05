@@ -7,7 +7,7 @@ module decentralized_real_estate::real_estate {
     use sui::transfer::{Self};
     use sui::event;
     use std::vector;
-    
+
     // Errors Definitions
     const INSUFFICIENT_FUNDS: u64 = 1;
     const TRANSACTION_NOT_VERIFIED: u64 = 2;
@@ -54,14 +54,11 @@ module decentralized_real_estate::real_estate {
 
     // Events
 
-    // Event Creation when a property is listed
     struct PropertyListed has copy, drop { id: ID, owner: address }
     struct TransactionCreated has copy, drop { id: ID, property_id: u64 }
     struct TransactionVerified has copy, drop { id: ID, verifier: address }
     struct TransactionCompleted has copy, drop { id: ID, property_id: u64 }
     struct RentalAgreementCreated has copy, drop { id: ID, property_id: u64 }
-
-    // Module constants
 
     // Create a new property listing
     public fun create_property(owner: address, location: vector<u8>, size: u64, price: u64, documents: vector<u8>, ctx: &mut TxContext) {
@@ -135,7 +132,7 @@ module decentralized_real_estate::real_estate {
         // If sufficient verifiers have verified, mark the transaction as verified
         if (vector::length(&transaction.verifiers) > 2) {
             transaction.is_verified = true;
-        };
+        }
 
         // Emit verification event
         event::emit(
@@ -167,7 +164,9 @@ module decentralized_real_estate::real_estate {
         event::emit(
             TransactionCompleted { 
                 id: object::uid_to_inner(&transaction.id), 
-                property_id: transaction.property_id });
+                property_id: transaction.property_id 
+            }
+        );
     }
 
     // Create a rental agreement
@@ -201,7 +200,7 @@ module decentralized_real_estate::real_estate {
         balance::join(&mut property.balance, balance);
         
         // Update the due date for the next payment
-        agreement.due_date = 30 * 24 * 60 * 60; // Assuming monthly rent
+        agreement.due_date += 30 * 24 * 60 * 60; // Assuming monthly rent
     }
 
     // End rental agreement
@@ -219,9 +218,94 @@ module decentralized_real_estate::real_estate {
         property.documents = documents;
     }
 
-
     // Calculate property tax (example implementation)
     public fun calculate_property_tax(property: &Property): u64 {
         property.price / 100 // Assuming 1% tax rate
+    }
+
+    // Additional functionality
+
+    // Function to list all properties
+    public fun list_all_properties(ctx: &TxContext): vector<Property> {
+        let objects = object::list_all();
+        let mut properties = vector::empty<Property>();
+        for obj in objects {
+            if (object::type(obj) == type_of<Property>()) {
+                let property: Property = object::read(obj);
+                properties.push_back(property);
+            }
+        }
+        properties
+    }
+
+    // Function to list all transactions
+    public fun list_all_transactions(ctx: &TxContext): vector<Transaction> {
+        let objects = object::list_all();
+        let mut transactions = vector::empty<Transaction>();
+        for obj in objects {
+            if (object::type(obj) == type_of<Transaction>()) {
+                let transaction: Transaction = object::read(obj);
+                transactions.push_back(transaction);
+            }
+        }
+        transactions
+    }
+
+    // Function to list all rental agreements
+    public fun list_all_rental_agreements(ctx: &TxContext): vector<RentalAgreement> {
+        let objects = object::list_all();
+        let mut agreements = vector::empty<RentalAgreement>();
+        for obj in objects {
+            if (object::type(obj) == type_of<RentalAgreement>()) {
+                let agreement: RentalAgreement = object::read(obj);
+                agreements.push_back(agreement);
+            }
+        }
+        agreements
+    }
+
+    // Function to fetch all properties owned by a user
+    public fun get_user_properties(user: address, ctx: &TxContext): vector<Property> {
+        let objects = object::list_all();
+        let mut properties = vector::empty<Property>();
+        for obj in objects {
+            if (object::type(obj) == type_of<Property>()) {
+                let property: Property = object::read(obj);
+                if (property.owner == user) {
+                    properties.push_back(property);
+                }
+            }
+        }
+        properties
+    }
+
+    // Function to fetch all transactions involving a user
+    public fun get_user_transactions(user: address, ctx: &TxContext): vector<Transaction> {
+        let objects = object::list_all();
+        let mut transactions = vector::empty<Transaction>();
+        for obj in objects {
+            if (object::type(obj) == type_of<Transaction>()) {
+                let transaction: Transaction = object::read(obj);
+                if (transaction.buyer == user || transaction.seller == user) {
+                    transactions.push_back(transaction);
+                }
+            }
+        }
+        transactions
+    }
+
+    // Function to fetch all rental agreements for a user
+    public fun get_user_rental_agreements(user: address, ctx: &TxContext): vector<RentalAgreement> {
+        let objects = object::list_all();
+        let mut agreements = vector::empty<RentalAgreement>();
+        for obj in objects {
+            if (object::type(obj) == type_of<RentalAgreement>()) {
+                let agreement: RentalAgreement = object::read(obj);
+                if (agreement.tenant == user || agreement.owner == user) {
+                    agreements.push_back(agreement);
+                }
+            }
+        }
+        agreements
     }
 }
