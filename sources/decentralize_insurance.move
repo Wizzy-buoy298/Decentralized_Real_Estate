@@ -7,7 +7,7 @@ module decentralized_real_estate::real_estate {
     use sui::transfer::{Self};
     use sui::event;
     use std::vector;
-    
+
     // Errors Definitions
     const INSUFFICIENT_FUNDS: u64 = 1;
     const TRANSACTION_NOT_VERIFIED: u64 = 2;
@@ -16,6 +16,8 @@ module decentralized_real_estate::real_estate {
     const UNAUTHORIZED_ACCESS: u64 = 5;
     const VERIFICATION_FAILED: u64 = 6;
     const AGREEMENT_NOT_ACTIVE: u64 = 7;
+    const INVALID_RENT_AMOUNT: u64 = 8;
+    const INSUFFICIENT_VERIFIERS: u64 = 9;
 
     // Struct representing a property listing
     struct Property has key, store {
@@ -32,7 +34,7 @@ module decentralized_real_estate::real_estate {
     // Struct representing a transaction
     struct Transaction has key, store {
         id: UID,
-        property_id: u64,
+        property_id: UID,
         buyer: address,
         seller: address,
         amount: u64,
@@ -44,7 +46,7 @@ module decentralized_real_estate::real_estate {
     // Struct representing a rental agreement
     struct RentalAgreement has key, store {
         id: UID,
-        property_id: u64,
+        property_id: UID,
         tenant: address,
         owner: address,
         rent_amount: u64,
@@ -53,15 +55,15 @@ module decentralized_real_estate::real_estate {
     }
 
     // Events
-
-    // Event Creation when a property is listed
     struct PropertyListed has copy, drop { id: ID, owner: address }
-    struct TransactionCreated has copy, drop { id: ID, property_id: u64 }
+    struct TransactionCreated has copy, drop { id: ID, property_id: UID }
     struct TransactionVerified has copy, drop { id: ID, verifier: address }
-    struct TransactionCompleted has copy, drop { id: ID, property_id: u64 }
-    struct RentalAgreementCreated has copy, drop { id: ID, property_id: u64 }
+    struct TransactionCompleted has copy, drop { id: ID, property_id: UID }
+    struct RentalAgreementCreated has copy, drop { id: ID, property_id: UID }
+    struct RentPaid has copy, drop { id: ID, amount: u64, tenant: address }
 
     // Module constants
+    const MINIMUM_VERIFIERS: u64 = 3;
 
     // Create a new property listing
     public fun create_property(owner: address, location: vector<u8>, size: u64, price: u64, documents: vector<u8>, ctx: &mut TxContext) {
@@ -100,7 +102,7 @@ module decentralized_real_estate::real_estate {
     }
 
     // Create a new transaction
-    public fun create_transaction(property_id: u64, buyer: address, amount: u64, ctx: &mut TxContext): Transaction {
+    public fun create_transaction(property_id: UID, buyer: address, amount: u64, ctx: &mut TxContext): Transaction {
         let transaction_id = object::new(ctx);
         let transaction = Transaction {
             id: transaction_id,
@@ -133,9 +135,9 @@ module decentralized_real_estate::real_estate {
         vector::push_back(&mut transaction.verifiers, verifier);
 
         // If sufficient verifiers have verified, mark the transaction as verified
-        if (vector::length(&transaction.verifiers) > 2) {
+        if (vector::length(&transaction.verifiers) >= MINIMUM_VERIFIERS) {
             transaction.is_verified = true;
-        };
+        }
 
         // Emit verification event
         event::emit(
@@ -147,7 +149,7 @@ module decentralized_real_estate::real_estate {
     }
 
     // Complete a transaction
-    public fun complete_transaction(transaction: &mut Transaction, property: &mut Property, payment: Coin<SUI>) {
+    public fun complete_transaction(transaction: &mut Transaction, property: &mut Property, payment: Coin<SUI>, ctx: &mut TxContext) {
         assert!(transaction.is_verified, TRANSACTION_NOT_VERIFIED);
         assert!(coin::value(&payment) >= transaction.amount, INSUFFICIENT_FUNDS);
         assert!(property.is_for_sale, PROPERTY_NOT_AVAILABLE);
@@ -159,7 +161,7 @@ module decentralized_real_estate::real_estate {
         // Complete the transaction
         transaction.is_completed = true;
         
-        // Transfer payment to the seller(owner of the property)
+        // Transfer payment to the seller (owner of the property)
         let balance = coin::into_balance(payment);
         balance::join(&mut property.balance, balance);
         
@@ -167,11 +169,13 @@ module decentralized_real_estate::real_estate {
         event::emit(
             TransactionCompleted { 
                 id: object::uid_to_inner(&transaction.id), 
-                property_id: transaction.property_id });
+                property_id: transaction.property_id 
+            }
+        );
     }
 
     // Create a rental agreement
-    public fun create_rental_agreement(property_id: u64, tenant: address, rent_amount: u64, due_date: u64, ctx: &mut TxContext): RentalAgreement {
+    public fun create_rental_agreement(property_id: UID, tenant: address, rent_amount: u64, due_date: u64, ctx: &mut TxContext): RentalAgreement {
         let agreement_id = object::new(ctx);
         let agreement = RentalAgreement {
             id: agreement_id,
@@ -192,7 +196,7 @@ module decentralized_real_estate::real_estate {
     }
 
     // Pay rent
-    public fun pay_rent(agreement: &mut RentalAgreement, property: &mut Property, payment: Coin<SUI>) {
+    public fun pay_rent(agreement: &mut RentalAgreement, property: &mut Property, payment: Coin<SUI>, ctx: &mut TxContext) {
         assert!(agreement.is_active, AGREEMENT_NOT_ACTIVE);
         assert!(coin::value(&payment) >= agreement.rent_amount, INSUFFICIENT_FUNDS);
         
@@ -200,8 +204,17 @@ module decentralized_real_estate::real_estate {
         let balance = coin::into_balance(payment);
         balance::join(&mut property.balance, balance);
         
-        // Update the due date for the next payment
-        agreement.due_date = 30 * 24 * 60 * 60; // Assuming monthly rent
+        // Update the due date for the next payment (assuming monthly rent)
+        agreement.due_date += 30 * 24 * 60 * 60;
+
+        // Emit rent payment event
+        event::emit(
+            RentPaid {
+                id: object::uid_to_inner(&agreement.id),
+                amount: agreement.rent_amount,
+                tenant: agreement.tenant,
+            }
+        );
     }
 
     // End rental agreement
@@ -218,7 +231,6 @@ module decentralized_real_estate::real_estate {
         property.price = price;
         property.documents = documents;
     }
-
 
     // Calculate property tax (example implementation)
     public fun calculate_property_tax(property: &Property): u64 {
